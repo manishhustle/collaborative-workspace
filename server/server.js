@@ -2,10 +2,18 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const mongoose = require('mongoose');
+const Drawing = require('./models/Drawing');
+require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/collaborative-workspace';
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch((err) => console.log('MongoDB connection warning:', err.message));
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -13,16 +21,36 @@ const io = new Server(server, {
 });
 
 const users = {};
+let currentStrokes = [];
+
+Drawing.findOne({ roomId: 'default' }).then((drawing) => {
+  if (drawing) {
+    currentStrokes = drawing.strokes;
+  }
+});
 
 io.on('connection', (socket) => {
-  // Assign random color to user cursor
-  const userColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+  const userColor = '#' + Math.floor(Math.random() * 16777215).toString(16);
   users[socket.id] = { id: socket.id, x: 0, y: 0, color: userColor };
 
+  socket.emit('canvas-history', currentStrokes);
   io.emit('users-update', Object.values(users));
 
   socket.on('draw', (data) => {
+    currentStrokes.push(data);
     socket.broadcast.emit('draw', data);
+
+    Drawing.findOneAndUpdate(
+      { roomId: 'default' },
+      { strokes: currentStrokes },
+      { upsert: true, new: true }
+    ).catch((err) => console.error('Save error:', err.message));
+  });
+
+  socket.on('clear-canvas', () => {
+    currentStrokes = [];
+    Drawing.findOneAndUpdate({ roomId: 'default' }, { strokes: [] }).catch((err) => console.error(err.message));
+    io.emit('clear-canvas');
   });
 
   socket.on('cursor-move', (data) => {

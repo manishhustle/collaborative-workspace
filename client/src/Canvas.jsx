@@ -13,8 +13,18 @@ export default function Canvas({ socket }) {
     canvas.width = window.innerWidth - 380;
     canvas.height = window.innerHeight - 150;
 
+    socket.on('canvas-history', (strokes) => {
+      strokes.forEach((stroke) => {
+        drawLine(ctx, stroke.prevPoint, stroke.currentPoint, stroke.color, stroke.lineWidth);
+      });
+    });
+
     socket.on('draw', ({ prevPoint, currentPoint, color, lineWidth }) => {
       drawLine(ctx, prevPoint, currentPoint, color, lineWidth);
+    });
+
+    socket.on('clear-canvas', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
     });
 
     socket.on('cursor-update', (user) => {
@@ -30,7 +40,9 @@ export default function Canvas({ socket }) {
     });
 
     return () => {
+      socket.off('canvas-history');
       socket.off('draw');
+      socket.off('clear-canvas');
       socket.off('cursor-update');
       socket.off('user-disconnected');
     };
@@ -68,11 +80,16 @@ export default function Canvas({ socket }) {
     prevPointRef.current = currentPoint;
   };
 
+  const clearCanvas = () => {
+    socket.emit('clear-canvas');
+  };
+
   return (
     <div style={{ position: 'relative', flex: 1, padding: '15px' }}>
-      <div style={{ marginBottom: '10px', display: 'flex', gap: '15px' }}>
+      <div style={{ marginBottom: '10px', display: 'flex', gap: '15px', alignItems: 'center' }}>
         <label>Color: <input type="color" value={color} onChange={(e) => setColor(e.target.value)} /></label>
         <label>Brush Size: <input type="range" min="1" max="20" value={lineWidth} onChange={(e) => setLineWidth(e.target.value)} /></label>
+        <button onClick={clearCanvas} style={{ padding: '5px 10px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Clear Canvas</button>
       </div>
       <canvas
         ref={canvasRef}
